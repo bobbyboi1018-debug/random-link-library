@@ -33,7 +33,7 @@
   <!-- Add & Pick Tab -->
   <div id="add" class="tab active-tab">
     <h2>Add a Link</h2>
-    <input type="text" id="linkInput" placeholder="Enter video/link URL" style="width:60%;">
+    <input type="text" id="linkInput" placeholder="Enter link URL" style="width:60%;">
     <button onclick="addLink()">Add</button>
     <button onclick="pickRandom()">🎲 Pick Random (All)</button>
     <div id="player"></div>
@@ -76,7 +76,6 @@
       localStorage.setItem("savedLinks", JSON.stringify(savedLinks));
       document.getElementById("linkInput").value = "";
       renderLibrary();
-      alert("Link added to library!");
     }
 
     // Render library
@@ -102,7 +101,6 @@
 
     // Delete link from library
     function deleteLink(index) {
-      if (!confirm("Delete this link?")) return;
       savedLinks.splice(index, 1);
       localStorage.setItem("savedLinks", JSON.stringify(savedLinks));
       renderLibrary();
@@ -175,11 +173,9 @@
       if (!link) return;
       collections[collectionName].push(link);
       localStorage.setItem("collections", JSON.stringify(collections));
-      alert(`Added to ${collectionName}!`);
     }
 
     function deleteFromCollection(name, index) {
-      if (!confirm("Delete from collection?")) return;
       collections[name].splice(index, 1);
       localStorage.setItem("collections", JSON.stringify(collections));
       showCollection(name);
