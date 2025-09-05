@@ -2,195 +2,227 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Link Picker with Collections</title>
+  <title>Link Library with Collections + Firebase</title>
   <style>
-    body { font-family: Arial, sans-serif; background: #f4f4f4; margin: 0; padding: 0; }
-    header { background: #333; color: #fff; padding: 1em; text-align: center; }
-    nav { display: flex; justify-content: center; gap: 1em; background: #444; padding: 0.5em; }
-    nav button { background: #666; color: #fff; border: none; padding: 0.5em 1em; cursor: pointer; border-radius: 4px; }
-    nav button.active { background: #007BFF; }
-    .tab { display: none; padding: 1em; }
-    .active-tab { display: block; }
-    .card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 1em; }
-    .card { background: #fff; border-radius: 6px; padding: 0.5em; box-shadow: 0 2px 5px rgba(0,0,0,0.2); text-align: center; }
-    .card img { width: 100%; height: 120px; object-fit: cover; border-radius: 4px; }
-    .card button, .card a button { margin-top: 0.3em; display: block; width: 100%; }
-    #player { margin-top: 1em; text-align: center; }
-    iframe, video { width: 80%; height: 400px; border: none; border-radius: 6px; }
+    body { font-family: Arial, sans-serif; background:#fafafa; margin:0; padding:0; }
+    .navbar { display:flex; gap:20px; padding:10px; background:#222; color:#fff; }
+    .tab { cursor:pointer; }
+    .card-grid { display:grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap:15px; padding:15px; }
+    .card { background:white; border-radius:12px; box-shadow:0 2px 6px rgba(0,0,0,0.2); padding:10px; text-align:center; }
+    .card img { width:100%; height:120px; object-fit:cover; border-radius:8px; }
+    button { margin:5px; padding:6px 10px; border:none; border-radius:6px; cursor:pointer; }
+    #auth-section { padding:20px; text-align:center; }
   </style>
 </head>
 <body>
-  <header>
-    <h1>🎲 Link Picker with Collections</h1>
-  </header>
-
-  <nav>
-    <button onclick="switchTab('add')" class="active">Add & Pick</button>
-    <button onclick="switchTab('library')">Library</button>
-    <button onclick="switchTab('collections')">Collections</button>
-  </nav>
-
-  <!-- Add & Pick Tab -->
-  <div id="add" class="tab active-tab">
-    <h2>Add a Link</h2>
-    <input type="text" id="linkInput" placeholder="Enter link URL" style="width:60%;">
-    <button onclick="addLink()">Add</button>
-    <button onclick="pickRandom()">🎲 Pick Random (All)</button>
-    <div id="player"></div>
+  <div class="navbar">
+    <div class="tab" onclick="showTab('library')">📚 Library</div>
+    <div class="tab" onclick="showTab('collections')">🗂 Collections</div>
+    <div class="tab" onclick="showTab('auth')">🔑 Account</div>
+    <button onclick="pickRandom()">🎲 Random</button>
+    <button onclick="logout()">🚪 Logout</button>
   </div>
 
-  <!-- Library Tab -->
-  <div id="library" class="tab">
-    <h2>Library</h2>
-    <div id="library-cards" class="card-grid"></div>
+  <!-- Tabs -->
+  <div id="library" class="tab-content"></div>
+  <div id="collections" class="tab-content" style="display:none"></div>
+  <div id="auth" class="tab-content" style="display:none">
+    <div id="auth-section">
+      <h2>Login / Signup</h2>
+      <input type="email" id="email" placeholder="Email"><br><br>
+      <input type="password" id="password" placeholder="Password"><br><br>
+      <button onclick="signup()">Sign Up</button>
+      <button onclick="login()">Login</button>
+    </div>
   </div>
 
-  <!-- Collections Tab -->
-  <div id="collections" class="tab">
-    <h2>Collections</h2>
-    <input type="text" id="collectionName" placeholder="New collection name">
-    <button onclick="createCollection()">Create Collection</button>
-    <div id="collection-list"></div>
-    <div id="collection-view"></div>
-  </div>
+  <div id="player" style="padding:20px; text-align:center;"></div>
+
+  <!-- Firebase SDK -->
+  <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore-compat.js"></script>
 
   <script>
-    let savedLinks = JSON.parse(localStorage.getItem("savedLinks")) || [];
-    let collections = JSON.parse(localStorage.getItem("collections")) || {};
+    // 🔹 1. Firebase Config (replace with your project’s config!)
+    const firebaseConfig = {
+      apiKey: "YOUR_API_KEY",
+      authDomain: "YOUR_PROJECT.firebaseapp.com",
+      projectId: "YOUR_PROJECT_ID",
+      storageBucket: "YOUR_PROJECT.appspot.com",
+      messagingSenderId: "123456",
+      appId: "1:123456:web:abcdef"
+    };
+    firebase.initializeApp(firebaseConfig);
+    const auth = firebase.auth();
+    const db = firebase.firestore();
 
-    // Switch tabs
-    function switchTab(tabId) {
-      document.querySelectorAll('.tab').forEach(tab => tab.classList.remove('active-tab'));
-      document.getElementById(tabId).classList.add('active-tab');
-      document.querySelectorAll('nav button').forEach(btn => btn.classList.remove('active'));
-      event.target.classList.add('active');
-      if (tabId === "library") renderLibrary();
-      if (tabId === "collections") renderCollections();
+    // 🔹 2. Global State
+    let currentUser = null;
+    let links = [];
+    let collections = {};
+
+    // 🔹 3. Auth
+    function signup() {
+      const email = document.getElementById('email').value;
+      const password = document.getElementById('password').value;
+      auth.createUserWithEmailAndPassword(email, password)
+        .then(() => alert("Account created!"))
+        .catch(err => alert(err.message));
     }
 
-    // Add link
-    function addLink() {
-      const url = document.getElementById("linkInput").value.trim();
-      if (!url) return alert("Please enter a link");
-      savedLinks.push({ url, thumbnail: "", embedCode: url });
-      localStorage.setItem("savedLinks", JSON.stringify(savedLinks));
-      document.getElementById("linkInput").value = "";
-      renderLibrary();
+    function login() {
+      const email = document.getElementById('email').value;
+      const password = document.getElementById('password').value;
+      auth.signInWithEmailAndPassword(email, password)
+        .catch(err => alert(err.message));
     }
 
-    // Render library
-    function renderLibrary() {
-      const libraryDiv = document.getElementById("library-cards");
-      libraryDiv.innerHTML = "";
-      savedLinks.forEach((link, index) => {
-        const card = document.createElement("div");
-        card.className = "card";
-        card.innerHTML = `
-          <img src="${link.thumbnail || 'https://via.placeholder.com/200x120?text=No+Thumbnail'}">
-          <button onclick="playLink('${link.embedCode}')">▶ Play</button>
-          <button onclick="deleteLink(${index})">🗑 Delete</button>
-          <a href="${link.url}" target="_blank"><button>🔗 Link</button></a>
-          <select onchange="addToCollection('${link.url}', this.value)">
-            <option value="">➕ Add to Collection</option>
-            ${Object.keys(collections).map(c => `<option value="${c}">${c}</option>`).join("")}
-          </select>
-        `;
-        libraryDiv.appendChild(card);
+    function logout() {
+      auth.signOut();
+    }
+
+    auth.onAuthStateChanged(user => {
+      if (user) {
+        currentUser = user;
+        loadData();
+      } else {
+        currentUser = null;
+        links = [];
+        collections = {};
+        renderLibrary();
+        renderCollections();
+      }
+    });
+
+    // 🔹 4. Firestore Save & Load
+    async function saveData() {
+      if (!currentUser) return;
+      await db.collection("users").doc(currentUser.uid).set({
+        links, collections
       });
     }
 
-    // Delete link from library
-    function deleteLink(index) {
-      savedLinks.splice(index, 1);
-      localStorage.setItem("savedLinks", JSON.stringify(savedLinks));
-      renderLibrary();
-    }
-
-    // Play link
-    function playLink(url) {
-      const player = document.getElementById("player");
-      if (url.endsWith(".mp4")) {
-        player.innerHTML = `<video controls autoplay><source src="${url}" type="video/mp4"></video>`;
-      } else {
-        player.innerHTML = `<iframe src="${url}" allowfullscreen></iframe>`;
+    async function loadData() {
+      if (!currentUser) return;
+      const doc = await db.collection("users").doc(currentUser.uid).get();
+      if (doc.exists) {
+        links = doc.data().links || [];
+        collections = doc.data().collections || {};
       }
-    }
-
-    // Pick random from all
-    function pickRandom() {
-      if (savedLinks.length === 0) return alert("No links saved!");
-      const random = savedLinks[Math.floor(Math.random() * savedLinks.length)];
-      playLink(random.embedCode || random.url);
-    }
-
-    // Collections
-    function createCollection() {
-      const name = document.getElementById("collectionName").value.trim();
-      if (!name) return alert("Enter a collection name");
-      if (collections[name]) return alert("Collection already exists!");
-      collections[name] = [];
-      localStorage.setItem("collections", JSON.stringify(collections));
-      document.getElementById("collectionName").value = "";
+      renderLibrary();
       renderCollections();
     }
 
+    // 🔹 5. Library
+    function renderLibrary() {
+      const div = document.getElementById("library");
+      div.innerHTML = `<h2>Library</h2>
+        <input type="text" id="newLink" placeholder="Enter link">
+        <button onclick="addLink()">Add</button>
+        <div class="card-grid"></div>`;
+      const grid = div.querySelector(".card-grid");
+      links.forEach((link, i) => {
+        const card = document.createElement("div");
+        card.className = "card";
+        card.innerHTML = `
+          <img src="${link.thumbnail || 'https://via.placeholder.com/200'}">
+          <button onclick="playLink('${link.url}')">▶ Play</button>
+          <a href="${link.url}" target="_blank"><button>🔗 Link</button></a>
+          <button onclick="deleteLink(${i})">🗑 Delete</button>
+        `;
+        grid.appendChild(card);
+      });
+    }
+
+    function addLink() {
+      const url = document.getElementById("newLink").value;
+      if (!url) return;
+      links.push({ url });
+      saveData();
+      renderLibrary();
+    }
+
+    function deleteLink(i) {
+      links.splice(i,1);
+      saveData();
+      renderLibrary();
+    }
+
+    // 🔹 6. Collections
     function renderCollections() {
-      const listDiv = document.getElementById("collection-list");
-      listDiv.innerHTML = "<h3>Your Collections:</h3>";
+      const div = document.getElementById("collections");
+      div.innerHTML = `<h2>Collections</h2>
+        <input type="text" id="newCol" placeholder="New collection name">
+        <button onclick="addCollection()">Add</button>
+        <div id="colList"></div>`;
+      const colList = div.querySelector("#colList");
       Object.keys(collections).forEach(name => {
         const btn = document.createElement("button");
         btn.textContent = name;
         btn.onclick = () => showCollection(name);
-        listDiv.appendChild(btn);
+        colList.appendChild(btn);
       });
+    }
+
+    function addCollection() {
+      const name = document.getElementById("newCol").value;
+      if (!name) return;
+      collections[name] = collections[name] || [];
+      saveData();
+      renderCollections();
     }
 
     function showCollection(name) {
-      const collectionLinks = collections[name] || [];
-      const collectionDiv = document.getElementById("collection-view");
-      collectionDiv.innerHTML = `
-        <h3>${name}</h3>
+      const colDiv = document.getElementById("collections");
+      colDiv.innerHTML = `<h3>${name}</h3>
         <button onclick="pickRandomFromCollection('${name}')">🎲 Pick Random</button>
-        <div id="collection-cards" class="card-grid"></div>
-      `;
-      const cardsDiv = document.getElementById("collection-cards");
-      collectionLinks.forEach((link, index) => {
+        <div id="collectionCards" class="card-grid"></div>`;
+      const grid = document.getElementById("collectionCards");
+      collections[name].forEach((link, i) => {
         const card = document.createElement("div");
         card.className = "card";
         card.innerHTML = `
-          <img src="${link.thumbnail || 'https://via.placeholder.com/200x120?text=No+Thumbnail'}">
-          <button onclick="playLink('${link.embedCode}')">▶ Play</button>
-          <button onclick="deleteFromCollection('${name}', ${index})">🗑 Delete</button>
+          <img src="${link.thumbnail || 'https://via.placeholder.com/200'}">
+          <button onclick="playLink('${link.url}')">▶ Play</button>
           <a href="${link.url}" target="_blank"><button>🔗 Link</button></a>
+          <button onclick="deleteFromCollection('${name}',${i})">🗑 Delete</button>
         `;
-        cardsDiv.appendChild(card);
+        grid.appendChild(card);
       });
     }
 
-    function addToCollection(url, collectionName) {
-      if (!collectionName) return;
-      const link = savedLinks.find(l => l.url === url);
-      if (!link) return;
-      collections[collectionName].push(link);
-      localStorage.setItem("collections", JSON.stringify(collections));
-    }
-
-    function deleteFromCollection(name, index) {
-      collections[name].splice(index, 1);
-      localStorage.setItem("collections", JSON.stringify(collections));
+    function deleteFromCollection(name, i) {
+      collections[name].splice(i,1);
+      saveData();
       showCollection(name);
     }
 
     function pickRandomFromCollection(name) {
-      const collectionLinks = collections[name] || [];
-      if (collectionLinks.length === 0) return alert("This collection is empty!");
-      const random = collectionLinks[Math.floor(Math.random() * collectionLinks.length)];
-      playLink(random.embedCode || random.url);
+      const col = collections[name];
+      if (!col || col.length === 0) { alert("Empty collection"); return; }
+      const randomLink = col[Math.floor(Math.random()*col.length)];
+      playLink(randomLink.url);
     }
 
-    // Initial render
-    renderLibrary();
-    renderCollections();
+    // 🔹 7. Random & Player
+    function pickRandom() {
+      if (links.length === 0) { alert("No links!"); return; }
+      const randomLink = links[Math.floor(Math.random()*links.length)];
+      playLink(randomLink.url);
+    }
+
+    function playLink(url) {
+      document.getElementById("player").innerHTML =
+        `<iframe src="${url}" width="640" height="360" allowfullscreen></iframe>`;
+    }
+
+    // 🔹 8. Tab System
+    function showTab(tab) {
+      document.querySelectorAll(".tab-content").forEach(el => el.style.display="none");
+      document.getElementById(tab).style.display="block";
+    }
   </script>
 </body>
 </html>
+
