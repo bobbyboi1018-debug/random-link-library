@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Random Link Picker with Collections</title>
+  <style>
+    :root {
+      --card-width: 250px;       
+      --card-thumbnail-height: 140px; 
+      --card-padding: 10px;      
+      --grid-gap: 15px;          
+    }
+
+    body { font-family: Arial; margin: 20px; }
+    nav button { margin-right: 10px; padding: 10px; }
+    #randomTab, #libraryTab, #collectionsTab { display: none; }
+
+    /* Grid layout */
+    .video-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(var(--card-width), 1fr));
+      gap: var(--grid-gap);
+    }
+
+    .video-card {
+      border: 1px solid #ccc;
+      padding: var(--card-padding);
+      text-align: center;
+      background: #f9f9f9;
+      min-height: calc(var(--card-thumbnail-height) + 80px);
+    }
+
+    .video-card img {
+      width: 100%;
+      height: var(--card-thumbnail-height);
+      object-fit: cover;
+      border-radius: 5px;
+    }
+
+    .player-container {
+      margin-top: 20px;
+      text-align: center;
+    }
+
+    video, iframe {
+      max-width: 100%;
+      height: auto;
+    }
+
+    .card-buttons { margin-top: 10px; display: flex; justify-content: center; gap: 5px; flex-wrap: wrap; }
+    .card-buttons button { padding: 5px 10px; }
+    .collection-list button { display:block; margin-bottom:5px; width:100%; text-align:left; }
+  </style>
+</head>
+<body>
+  <h1>🎲 Random Link Picker with Collections</h1>
+
+  <nav>
+    <button onclick="showTab('randomTab')">Add & Pick</button>
+    <button onclick="showTab('libraryTab')">Library</button>
+    <button onclick="showTab('collectionsTab')">Collections</button>
+  </nav>
+
+  <!-- Add & Random Tab -->
+  <div id="randomTab">
+    <h2>Add a Link</h2>
+    <input id="linkInput" type="text" placeholder="Enter link"><br><br>
+    <input id="thumbInput" type="file" accept="image/*"><br><br>
+    <textarea id="iframeInput" placeholder="Optional: paste iframe embed code here" rows="3" style="width:100%"></textarea><br><br>
+    <button onclick="addLink()">Add to Library</button>
+    <hr>
+    <button onclick="pickRandom()">Pick Random Link</button>
+    <div id="result"></div>
+    <div id="randomPlayer" class="player-container"></div>
+  </div>
+
+  <!-- Library Tab -->
+  <div id="libraryTab">
+    <h2>📺 Your Library</h2>
+    <div id="videoGrid" class="video-grid"></div>
+    <div id="libraryPlayer" class="player-container"></div>
+  </div>
+
+  <!-- Collections Tab -->
+  <div id="collectionsTab">
+    <h2>🗂 Collections</h2>
+    <input id="newCollectionName" type="text" placeholder="New collection name">
+    <button onclick="createCollection()">Create Collection</button>
+    <hr>
+    <div style="display:flex; gap:20px;">
+      <!-- Collection list -->
+      <div style="width:200px;">
+        <h3>Collections</h3>
+        <div id="collectionList" class="collection-list"></div>
+      </div>
+      <!-- Selected collection grid -->
+      <div style="flex:1;">
+        <h3 id="selectedCollectionTitle"></h3>
+        <div id="collectionGrid" class="video-grid"></div>
+        <div id="collectionPlayer" class="player-container"></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let savedLinks = JSON.parse(localStorage.getItem("savedLinks") || "[]");
+    let collections = JSON.parse(localStorage.getItem("collections") || "{}");
+    let currentCollection = null;
+
+    function showTab(tabId) {
+      document.getElementById('randomTab').style.display = 'none';
+      document.getElementById('libraryTab').style.display = 'none';
+      document.getElementById('collectionsTab').style.display = 'none';
+      document.getElementById(tabId).style.display = 'block';
+      if(tabId==='libraryTab') updateLibrary();
+      if(tabId==='collectionsTab') updateCollectionList();
+    }
+
+    function addLink() {
+      const link = document.getElementById('linkInput').value.trim();
+      const iframeCode = document.getElementById('iframeInput').value.trim();
+      const fileInput = document.getElementById('thumbInput');
+
+      if (!link && !iframeCode) { alert("Please enter a link or iframe embed code."); return; }
+
+      if (fileInput.files.length > 0) {
+        const reader = new FileReader();
+        reader.onload = function(e) {
+          savedLinks.push({ url: link, thumbnail: e.target.result, embedCode: iframeCode });
+          localStorage.setItem("savedLinks", JSON.stringify(savedLinks));
+          clearInputs();
+          updateLibrary();
+        };
+        reader.readAsDataURL(fileInput.files[0]);
+      } else {
+        savedLinks.push({ url: link, thumbnail: "", embedCode: iframeCode });
+        localStorage.setItem("savedLinks", JSON.stringify(savedLinks));
+        clearInputs();
+        updateLibrary();
+      }
+    }
+
+    function clearInputs() {
+      document.getElementById('linkInput').value = "";
+      document.getElementById('thumbInput').value = "";
+      document.getElementById('iframeInput').value = "";
+    }
+
+    function pickRandom() {
+      if (savedLinks.length === 0) { document.getElementById('result').innerHTML = "⚠️ No links saved yet."; return; }
+      const random = savedLinks[Math.floor(Math.random() * savedLinks.length)];
+      document.getElementById('result').innerHTML = `🎲 Random Link: <button onclick="window.open('${random.url}','_blank')">Link</button>`;
+      playVideo(random, 'randomPlayer');
+    }
+
+    function updateLibrary() {
+      const grid = document.getElementById('videoGrid');
+      grid.innerHTML = "";
+      savedLinks.forEach((item, index) => {
+        const card = document.createElement("div");
+        card.className = "video-card";
+        const collectionOptions = Object.keys(collections).map(c => `<option value="${c}">${c}</option>`).join('');
+        card.innerHTML = `
+          ${item.thumbnail ? `<img src="${item.thumbnail}" alt="Thumbnail">` : ""}
+          <div class="card-buttons">
+            <button onclick="window.open('${item.url}','_blank')">Link</button>
+            <button onclick='playVideo(savedLinks[${index}], "libraryPlayer")'>Play</button>
+            <button onclick='deleteLink(${index})'>Delete</button>
+            ${collectionOptions ? `<select onchange="addToCollection(${index}, this.value)"><option value="">Add to Collection</option>${collectionOptions}</select>` : ""}
+          </div>
+        `;
+        grid.appendChild(card);
+      });
+    }
+
+    function playVideo(item, containerId) {
+      const container = document.getElementById(containerId);
+      container.innerHTML = "";
+      if (item.embedCode) { container.innerHTML = item.embedCode; return; }
+      if (item.url) {
+        const ytMatch = item.url.match(/(?:v=|\.be\/)([a-zA-Z0-9_-]{11})/);
+        const vimeoMatch = item.url.match(/vimeo\.com\/(\d+)/);
+        if (item.url.endsWith(".mp4") || item.url.endsWith(".webm")) { container.innerHTML = `<video controls src="${item.url}"></video>`; }
+        else if (ytMatch) { const videoId = ytMatch[1]; container.innerHTML = `<iframe src="https://www.youtube.com/embed/${videoId}" frameborder="0" allowfullscreen></iframe>`; }
+        else if (vimeoMatch) { const videoId = vimeoMatch[1]; container.innerHTML = `<iframe src="https://player.vimeo.com/video/${videoId}" frameborder="0" allowfullscreen></iframe>`; }
+        else { window.open(item.url, "_blank"); container.innerHTML = `<p>Opened in new tab: <a href="${item.url}" target="_blank">${item.url}</a></p>`; }
+      }
+    }
+
+    function deleteLink(index) {
+      if (confirm("Are you sure you want to delete this link?")) {
+        savedLinks.splice(index,1);
+        localStorage.setItem("savedLinks", JSON.stringify(savedLinks));
+        updateLibrary();
+      }
+    }
+
+    function createCollection() {
+      const name = document.getElementById('newCollectionName').value.trim();
+      if(!name) { alert("Enter a collection name."); return; }
+      if(collections[name]) { alert("Collection already exists."); return; }
+      collections[name] = [];
+      localStorage.setItem("collections", JSON.stringify(collections));
+      document.getElementById('newCollectionName').value = "";
+      updateCollectionList();
+      alert(`Collection "${name}" created!`);
+    }
+
+    function updateCollectionList() {
+      const list = document.getElementById('collectionList');
+      list.innerHTML = "";
+      Object.keys(collections).forEach(name => {
+        const btn = document.createElement("button");
+        btn.textContent = name;
+        btn.onclick = () => showCollection(name);
+        list.appendChild(btn);
+      });
+    }
+
+    function addToCollection(linkIndex, collectionName) {
+      if(!collectionName) return;
+      const link = savedLinks[linkIndex];
+      collections[collectionName].push(link);
+      localStorage.setItem("collections", JSON.stringify(collections));
+      alert(`Added to collection "${collectionName}"`);
+    }
+
+    function showCollection(name) {
+      currentCollection = name;
+      document.getElementById('selectedCollectionTitle').textContent = name;
+      const grid = document.getElementById('collectionGrid');
+      grid.innerHTML = "";
+      collections[name].forEach((item, idx) => {
+        const card = document.createElement("div");
+        card.className = "video-card";
+        card.innerHTML = `
+          ${item.thumbnail ? `<img src="${item.thumbnail}" alt="Thumbnail">` : ""}
+          <div class="card-buttons">
+            <button onclick="window.open('${item.url}','_blank')">Link</button>
+            <button onclick='playVideo(collections["${name}"][${idx}], "collectionPlayer")'>Play</button>
+            <button onclick='deleteFromCollection("${name}", ${idx})'>Delete</button>
+          </div>
+        `;
+        grid.appendChild(card);
+      });
+    }
+
+    function deleteFromCollection(collectionName, idx) {
+      if(confirm("Are you sure you want to delete this link from the collection?")) {
+        collections[collectionName].splice(idx,1);
+        localStorage.setItem("collections", JSON.stringify(collections));
+        showCollection(collectionName);
+      }
+    }
+
+    showTab('randomTab');
+  </script>
+</body>
+</html>
